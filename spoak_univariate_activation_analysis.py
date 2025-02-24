@@ -3,11 +3,19 @@ import datetime
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
+import sys
 
 # static variables 
 alpha = 0.05  # significance level
 cl = 'high'  # default confidence level (high, medium, or low) -  impacts sample size minimum
-base_fp = input('Base filepath: ')  # filepath of folder containing read/write data (ends in /)
+
+if len(sys.argv) < 2:
+    print("Error: Missing required input parameter: outcome column.")
+    sys.exit(1)
+
+outcome_col = sys.argv[1]  # outcome for univariate tests
+
+base_fp = input('Base filepath (ending in /): ')  # filepath of folder containing read/write data (ends in /)
 input_csv = input('Input CSV name: ')  # read csv name
 output_csv = input('Output CSV name: ')  # write csv name
 member_cols = [  # set of columns pertaining to member details - not event data
@@ -16,11 +24,11 @@ member_cols = [  # set of columns pertaining to member details - not event data
     'canceled_at', 
     'canceled_1_hour', 
     'canceled_1_day', 
-    'canceled_1_week'
+    'canceled_1_week',
+    'buy_now_clicked_ever'
     ]
-outcome_col = 'canceled_1_week'  # outcome for univariate tests
 
-def get_sample_size_min(confidence_level, cancel_rate):
+def get_sample_size_min(confidence_level, outcome_rate):
     '''
         determine the minimum frequency of an event to consider it in the analysis.
         low confidence is 75%, medium confidence is 85%. we default to high confidence (95%) 
@@ -28,7 +36,7 @@ def get_sample_size_min(confidence_level, cancel_rate):
         params:
             confidence_level: string to determine how conservative we should be - 
                               low = least conservative (options (high, low, medium))
-            cancel_rate: float of what % of members in this population have canceled
+            outcome_rate: float of what % of members in this population have completed the outcome
             
         returns:
             sample_size_min: int minimum frequency of an event to include it in analysis
@@ -36,13 +44,13 @@ def get_sample_size_min(confidence_level, cancel_rate):
     '''
     # sample size minimum calculator:
     if confidence_level == 'low':
-        sample_size_min = round((1.15**2 * cancel_rate * (1 - cancel_rate)) / .05**2)
+        sample_size_min = round((1.15**2 * outcome_rate * (1 - outcome_rate)) / .05**2)
     
     elif confidence_level == 'medium':
-        sample_size_min = round((1.44**2 * cancel_rate * (1 - cancel_rate)) / .05**2)
+        sample_size_min = round((1.44**2 * outcome_rate * (1 - outcome_rate)) / .05**2)
         
     else:
-        sample_size_min = round((1.96**2 * cancel_rate * (1 - cancel_rate)) / .05**2)
+        sample_size_min = round((1.96**2 * outcome_rate * (1 - outcome_rate)) / .05**2)
         
     return sample_size_min
 
@@ -111,8 +119,8 @@ def run_all_interventions(full_event_df, event_set, outcome):
                           'contingency_table': event_ct.values,
                           'no_event_population': no_event_population,
                           'event_population': event_population,
-                          'no_event_cancel_rate': no_event_conversion,
-                          'event_cancel_rate': event_conversion,
+                          'no_event_outcome_rate': no_event_conversion,
+                          'event_outcome_rate': event_conversion,
                           'effect_size': no_event_conversion - event_conversion,
                           'absolute_effect_size': abs(no_event_conversion - event_conversion),
                           'statistically_significant': 1 if min(p_chi, p_fisher) <= alpha else 0
@@ -126,11 +134,11 @@ events = members_and_events.drop(member_cols, axis=1)
 
 # log interim metrics
 print('total members: {}'.format(len(members_and_events)))
-cancel_rate = sum(members_and_events.canceled_1_week) / len(members_and_events)
-print('overall cancel rate: {}'.format(cancel_rate))
+outcome_rate = sum(members_and_events[outcome_col]) / len(members_and_events)
+print('overall outcome rate: {}'.format(outcome_rate))
 
 # filter out events that occur too infrequently
-sample_size_min = get_sample_size_min(cl, cancel_rate)
+sample_size_min = get_sample_size_min(cl, outcome_rate)
 keep_event_cols = list({k:v for k,v in dict(events.sum()).items() if (v > sample_size_min)}.keys())
 keep_cols = member_cols + keep_event_cols
 members_and_events = members_and_events[keep_cols]
